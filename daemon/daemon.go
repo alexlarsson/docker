@@ -164,6 +164,7 @@ func (daemon *Daemon) register(container *Container, updateSuffixarray bool) err
 		return err
 	}
 
+	container.execDriver = daemon.execDriver
 	container.daemon = daemon
 
 	// Attach to stdout and stderr
@@ -966,14 +967,6 @@ func (daemon *Daemon) Diff(container *Container) (archive.Archive, error) {
 		daemon.driver.Put(container.ID)
 		return err
 	}), nil
-}
-
-func (daemon *Daemon) Run(c *Container, pipes *execdriver.Pipes, startCallback execdriver.StartCallback) (int, error) {
-	return daemon.execDriver.Run(c.command, pipes, startCallback)
-}
-
-func (daemon *Daemon) Kill(c *Container, sig int) error {
-	return daemon.execDriver.Kill(c.command, sig)
 }
 
 // Nuke kills all containers then removes all content
