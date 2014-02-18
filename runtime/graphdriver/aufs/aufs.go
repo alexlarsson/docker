@@ -123,6 +123,10 @@ func (a Driver) Status() [][2]string {
 	}
 }
 
+func (a Driver) Operation(op string, args []string) error {
+	return fmt.Errorf("Operation %s not supported", op)
+}
+
 // Exists returns true if the given id is registered with
 // this driver
 func (a Driver) Exists(id string) bool {

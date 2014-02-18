@@ -88,6 +88,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"commit", "Create a new image from a container's changes"},
 		{"cp", "Copy files/folders from the containers filesystem to the host path"},
 		{"diff", "Inspect changes on a container's filesystem"},
+		{"driver", "Driver specific operations"},
 		{"events", "Get real time events from the server"},
 		{"export", "Stream the contents of a container as a tar archive"},
 		{"history", "Show the history of an image"},
@@ -2075,6 +2076,33 @@ func (cli *DockerCli) CmdLoad(args ...string) error {
 	if err := cli.stream("POST", "/images/load", cli.in, cli.out, nil); err != nil {
 		return err
 	}
+	return nil
+}
+
+// 'docker driver': driver specific ops
+func (cli *DockerCli) CmdDriver(args ...string) error {
+	cmd := cli.Subcmd("driver", "OPERATION [ARGUMENTS]", "Driver specific ops.")
+	if err := cmd.Parse(args); err != nil {
+		return nil
+	}
+
+	if cmd.NArg() == 0 {
+		cmd.Usage()
+		return nil
+	}
+
+	operation := cmd.Arg(0)
+
+	val := url.Values{}
+	if cmd.NArg() > 1 {
+		val.Set("args", strings.Join(cmd.Args()[1:], " "))
+	}
+
+	_, _, err := readBody(cli.call("GET", "/driver/"+operation+"?"+val.Encode(), nil, false))
+	if err != nil {
+		return err
+	}
+
 	return nil
 }
 

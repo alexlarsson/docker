@@ -115,6 +115,27 @@ func getBoolParam(value string) (bool, error) {
 	return ret, nil
 }
 
+func getDriverOperation(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	if vars == nil {
+		return fmt.Errorf("Missing parameter")
+	}
+	if err := parseForm(r); err != nil {
+		return err
+	}
+	args := []string{vars["operation"]}
+	argsString := r.Form.Get("args")
+	if argsString != "" {
+		args = append(args, strings.Split(argsString, " ")...)
+	}
+
+	job := eng.Job("driver", args...)
+	if err := job.Run(); err != nil {
+		return err
+	}
+	w.WriteHeader(http.StatusNoContent)
+	return nil
+}
+
 func postAuth(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	var (
 		authConfig, err = ioutil.ReadAll(r.Body)
@@ -1010,6 +1031,7 @@ func createRouter(eng *engine.Engine, logging, enableCors bool, dockerVersion st
 			"/containers/{name:.*}/json":      getContainersByName,
 			"/containers/{name:.*}/top":       getContainersTop,
 			"/containers/{name:.*}/attach/ws": wsContainersAttach,
+			"/driver/{operation:.*}":          getDriverOperation,
 		},
 		"POST": {
 			"/auth":                         postAuth,

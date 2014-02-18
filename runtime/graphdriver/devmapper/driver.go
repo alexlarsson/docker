@@ -56,6 +56,13 @@ func (d *Driver) Status() [][2]string {
 	return status
 }
 
+func (d *Driver) Operation(op string, args []string) error {
+	switch op {
+	default:
+		return fmt.Errorf("Operation %s not supported", op)
+	}
+}
+
 func (d *Driver) Cleanup() error {
 	return d.DeviceSet.Shutdown()
 }
