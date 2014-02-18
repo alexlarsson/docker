@@ -111,6 +111,22 @@ func (d *Driver) Operation(op string, args []string) error {
 		}
 
 		return nil
+	case "resize":
+		if len(args) != 2 {
+			return fmt.Errorf("Usage: resize IMAGE/CONTAINER NEW_SIZE")
+		}
+
+		size, err := byteSizeFromString(args[1])
+		if err != nil {
+			return fmt.Errorf("Invalid size: %s", args[0])
+		}
+
+		err = d.DeviceSet.ResizeDevice(args[0], size)
+		if err != nil {
+			return fmt.Errorf("Error resizing %s: %s", args[0], err.Error())
+		}
+
+		return nil
 	default:
 		return fmt.Errorf("Operation %s not supported", op)
 	}

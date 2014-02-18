@@ -1077,6 +1077,63 @@ func (devices *DeviceSet) Status() *Status {
 	return status
 }
 
+func (devices *DeviceSet) ResizeDevice(hash string, size int64) error {
+	devices.Lock()
+	defer devices.Unlock()
+
+	info := devices.Devices[hash]
+	if info == nil {
+		return fmt.Errorf("Unknown device %s", hash)
+	}
+
+	if size < 0 || info.Size > uint64(size) {
+		return fmt.Errorf("Can't shrink devices")
+	}
+
+	devinfo, err := getInfo(info.Name())
+	if info == nil {
+		return err
+	}
+
+	if devinfo.OpenCount != 0 {
+		return fmt.Errorf("Device in use")
+	}
+
+	if devinfo.Exists != 0 {
+		if err := devices.deactivateDevice(hash); err != nil {
+			return err
+		}
+	}
+
+	oldSize := info.Size
+	info.Size = uint64(size)
+
+	if err := devices.saveMetadata(); err != nil {
+		info.Size = oldSize
+		return err
+	}
+
+	if err := devices.activateDeviceIfNeeded(hash); err != nil {
+		return err
+	}
+
+	err = execRun("e2fsck", "-f", "-y", info.DevName())
+	if err != nil {
+		return fmt.Errorf("e2fsck failed: %v", err)
+	}
+
+	err = execRun("resize2fs", info.DevName())
+	if err != nil {
+		return fmt.Errorf("resizee2fs failed: %v", err)
+	}
+
+	if err := devices.deactivateDevice(hash); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func NewDeviceSet(root string, doInit bool) (*DeviceSet, error) {
 	SetDevDir("/dev")
 
