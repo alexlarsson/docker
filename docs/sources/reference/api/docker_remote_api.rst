@@ -57,6 +57,10 @@ What's new
   **New!** You can now use the force paramter to force delete a container, even if
   it is currently running
 
+.. http:post:: /images/squash
+
+  **New!** New requiest to create images that combine multiple layers in existing images
+
 v1.9
 ****
 
