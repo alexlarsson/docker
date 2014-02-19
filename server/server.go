@@ -102,6 +102,7 @@ func InitServer(job *engine.Job) engine.Status {
 		"viz":              srv.ImagesViz,
 		"container_copy":   srv.ContainerCopy,
 		"insert":           srv.ImageInsert,
+		"squash":           srv.ImageSquash,
 		"attach":           srv.ContainerAttach,
 		"search":           srv.ImagesSearch,
 		"changes":          srv.ContainerChanges,
@@ -1119,6 +1120,45 @@ func (srv *Server) ContainerCommit(job *engine.Job) engine.Status {
 	}
 
 	img, err := srv.daemon.Commit(container, job.Getenv("repo"), job.Getenv("tag"), job.Getenv("comment"), job.Getenv("author"), &newConfig)
+	if err != nil {
+		return job.Error(err)
+	}
+	job.Printf("%s\n", img.ID)
+	return engine.StatusOK
+}
+
+func (srv *Server) ImageSquash(job *engine.Job) engine.Status {
+	if len(job.Args) != 2 {
+		return job.Errorf("Not enough arguments. Usage: %s BASEIMAGE IMAGE\n", job.Name)
+	}
+
+	base, err := srv.runtime.Repositories().LookupImage(job.Args[0])
+	if err != nil {
+		return job.Errorf("No such image: %s", job.Args[0])
+	}
+	leaf, err := srv.runtime.Repositories().LookupImage(job.Args[1])
+	if err != nil {
+		return job.Errorf("No such image: %s", job.Args[1])
+	}
+
+	foundBase := false
+	leaf.WalkHistory(func(img *image.Image) error {
+		if img.ID == base.ID {
+			foundBase = true
+		}
+		return nil
+	})
+
+	if !foundBase || base == leaf {
+		return job.Errorf("%s is not decendant from %s", job.Args[1], job.Args[0])
+	}
+
+	comment := job.Getenv("comment")
+	if comment == "" {
+		comment = "Squashed from " + leaf.ID
+	}
+
+	img, err := srv.runtime.Squash(base.ID, leaf, job.Getenv("repo"), job.Getenv("tag"), comment)
 	if err != nil {
 		return job.Error(err)
 	}
