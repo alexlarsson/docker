@@ -95,6 +95,17 @@ func byteSizeFromString(arg string) (int64, error) {
 
 func (d *Driver) Operation(op string, args []string) error {
 	switch op {
+	case "trim-pool":
+		if len(args) != 0 {
+			return fmt.Errorf("Usage: trim-pool")
+		}
+
+		err := d.DeviceSet.TrimPool()
+		if err != nil {
+			return fmt.Errorf("Error trimming pool: %s", err.Error())
+		}
+
+		return nil
 	case "resize-pool":
 		if len(args) != 1 {
 			return fmt.Errorf("Usage: resize-pool NEW_SIZE")
