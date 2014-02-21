@@ -10,6 +10,7 @@ type HostConfig struct {
 	Binds           []string
 	ContainerIDFile string
 	LxcConf         utils.KeyValuePairs
+	UnitConf        utils.KeyValuePairs
 	Privileged      bool
 	PortBindings    nat.PortMap
 	Links           []string
@@ -23,6 +24,7 @@ func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {
 		PublishAllPorts: job.GetenvBool("PublishAllPorts"),
 	}
 	job.GetenvJson("LxcConf", &hostConfig.LxcConf)
+	job.GetenvJson("UnitConf", &hostConfig.UnitConf)
 	job.GetenvJson("PortBindings", &hostConfig.PortBindings)
 	if Binds := job.GetenvList("Binds"); Binds != nil {
 		hostConfig.Binds = Binds

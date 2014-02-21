@@ -379,6 +379,9 @@ func populateCommand(c *Container) {
 	if lxcConf := c.hostConfig.LxcConf; lxcConf != nil {
 		driverConfig["lxc"] = lxcConf
 	}
+	if unitConf := c.hostConfig.UnitConf; unitConf != nil {
+		driverConfig["unit"] = unitConf
+	}
 	resources := &execdriver.Resources{
 		Memory:     c.Config.Memory,
 		MemorySwap: c.Config.MemorySwap,

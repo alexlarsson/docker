@@ -45,6 +45,15 @@ func createContainer(c *execdriver.Command) *libcontainer.Container {
 		container.Cgroups.Memory = c.Resources.Memory
 		container.Cgroups.MemorySwap = c.Resources.MemorySwap
 	}
+
+	if opts, ok := c.Config["unit"]; ok {
+		props := [][2]string{}
+		for _, opt := range opts {
+			props = append(props, [2]string{opt.Key, opt.Value})
+		}
+		container.Cgroups.UnitProperties = props
+	}
+
 	// check to see if we are running in ramdisk to disable pivot root
 	container.NoPivotRoot = os.Getenv("DOCKER_RAMDISK") != ""
 
