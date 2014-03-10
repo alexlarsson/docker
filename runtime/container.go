@@ -402,20 +402,7 @@ func populateCommand(c *Container) {
 	c.command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 }
 
-func (container *Container) Start() (err error) {
-	container.Lock()
-	defer container.Unlock()
-
-	if container.State.IsRunning() {
-		return fmt.Errorf("The container %s is already running.", container.ID)
-	}
-
-	defer func() {
-		if err != nil {
-			container.cleanup()
-		}
-	}()
-
+func (container *Container) prepareForStart() error {
 	if err := container.Mount(); err != nil {
 		return err
 	}
@@ -536,6 +523,29 @@ func (container *Container) Start() (err error) {
 		return err
 	}
 
+	container.waitLock = make(chan struct{})
+
+	return nil
+}
+
+func (container *Container) Start() (err error) {
+	container.Lock()
+	defer container.Unlock()
+
+	if container.State.IsRunning() {
+		return fmt.Errorf("The container %s is already running.", container.ID)
+	}
+
+	defer func() {
+		if err != nil {
+			container.cleanup()
+		}
+	}()
+
+	if err := container.prepareForStart(); err != nil {
+		return err
+	}
+
 	// Setup logging of stdout and stderr to disk
 	if err := container.runtime.LogToDisk(container.stdout, container.logPath("json"), "stdout"); err != nil {
 		return err
@@ -543,7 +553,6 @@ func (container *Container) Start() (err error) {
 	if err := container.runtime.LogToDisk(container.stderr, container.logPath("json"), "stderr"); err != nil {
 		return err
 	}
-	container.waitLock = make(chan struct{})
 
 	callbackLock := make(chan struct{})
 	callback := func(command *execdriver.Command) {
