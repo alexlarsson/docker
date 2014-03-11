@@ -133,3 +133,12 @@ type Command struct {
 func (c *Command) Pid() int {
 	return c.ContainerPid
 }
+
+type ForkInfo struct {
+	Command Command  `json:"command"`
+	Env     []string `json:"env"` // This is not exposed in the Command json output, so manually put it here
+
+	Root        string `json:"root"`
+	SysInitPath string `json:"sys_init_path"`
+	ExecDriver  string `json:"exec_driver"`
+}

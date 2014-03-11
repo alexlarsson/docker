@@ -628,6 +628,44 @@ func deleteImages(eng *engine.Engine, version version.Version, w http.ResponseWr
 	return job.Run()
 }
 
+func postContainersFork(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
+	if vars == nil {
+		return fmt.Errorf("Missing parameter")
+	}
+	name := vars["name"]
+
+	job := eng.Job("fork", name)
+	streamJSON(job, w, true)
+	if err := job.Run(); err != nil {
+		return err
+	}
+
+	// Hijack the input stream after sending reply so we can
+	// wait for container exit (and exit status)
+	inStream, outStream, err := hijackServer(w)
+	if err != nil {
+		return err
+	}
+	defer inStream.Close()
+
+	// Close outStream so client finishes reading reply
+	if unixc, ok := outStream.(*net.UnixConn); ok {
+		unixc.CloseWrite()
+	} else if tcpc, ok := outStream.(*net.TCPConn); ok {
+		tcpc.CloseWrite()
+	}
+
+	// Block waiting for container exit, which closes the stream (and may report exit code)
+	exitCode, _ := ioutil.ReadAll(inStream)
+
+	job = eng.Job("fork_end", name, string(exitCode))
+	if err := job.Run(); err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func postContainersStart(eng *engine.Engine, version version.Version, w http.ResponseWriter, r *http.Request, vars map[string]string) error {
 	if vars == nil {
 		return fmt.Errorf("Missing parameter")
@@ -1014,6 +1052,7 @@ func createRouter(eng *engine.Engine, logging, enableCors bool, dockerVersion st
 			"/images/{name:.*}/push":        postImagesPush,
 			"/images/{name:.*}/tag":         postImagesTag,
 			"/containers/create":            postContainersCreate,
+			"/containers/{name:.*}/fork":    postContainersFork,
 			"/containers/{name:.*}/kill":    postContainersKill,
 			"/containers/{name:.*}/restart": postContainersRestart,
 			"/containers/{name:.*}/start":   postContainersStart,

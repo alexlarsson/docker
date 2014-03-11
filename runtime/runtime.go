@@ -157,7 +157,7 @@ func (runtime *Runtime) Register(container *Container) error {
 	//        if so, then we need to restart monitor and init a new lock
 	// If the container is supposed to be running, make sure of it
 	if container.State.IsRunning() {
-		if container.State.IsGhost() {
+		if container.State.IsGhost() && container.State.Pid != 0 {
 			utils.Debugf("killing ghost %s", container.ID)
 
 			container.State.SetGhost(false)

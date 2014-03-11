@@ -10,9 +10,12 @@ import (
 	"github.com/dotcloud/docker/archive"
 	"github.com/dotcloud/docker/dockerversion"
 	"github.com/dotcloud/docker/engine"
+	"github.com/dotcloud/docker/execdriver"
+	"github.com/dotcloud/docker/execdriver/execdrivers"
 	"github.com/dotcloud/docker/nat"
 	flag "github.com/dotcloud/docker/pkg/mflag"
 	"github.com/dotcloud/docker/pkg/signal"
+	"github.com/dotcloud/docker/pkg/sysinfo"
 	"github.com/dotcloud/docker/pkg/term"
 	"github.com/dotcloud/docker/registry"
 	"github.com/dotcloud/docker/runconfig"
@@ -102,6 +105,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"diff", "Inspect changes on a container's filesystem"},
 		{"events", "Get real time events from the server"},
 		{"export", "Stream the contents of a container as a tar archive"},
+		{"fork", "Directly start container"},
 		{"history", "Show the history of an image"},
 		{"images", "List images"},
 		{"import", "Create a new filesystem image from the contents of a tarball"},
@@ -653,6 +657,68 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 		}
 		return <-cErr
 	}
+	return nil
+}
+
+func (cli *DockerCli) CmdFork(args ...string) error {
+	forkCmd := cli.Subcmd("fork", "CONTAINER", "Start a container directly")
+	if err := forkCmd.Parse(args); err != nil {
+		return nil
+	}
+	if forkCmd.NArg() != 1 {
+		forkCmd.Usage()
+		return nil
+	}
+
+	response, _, err := cli.call("POST", "/containers/"+forkCmd.Arg(0)+"/fork", nil, false)
+	if err != nil {
+		return err
+	}
+
+	body, _ := ioutil.ReadAll(response)
+	var info execdriver.ForkInfo
+	if err := json.Unmarshal(body, &info); err != nil {
+		return err
+	}
+
+	rwc, _ := response.ClientConn.Hijack()
+	defer rwc.Close()
+
+	driverName := strings.Split(info.ExecDriver, "-")[0]
+	driver, err := execdrivers.NewDriver(driverName, info.Root, info.SysInitPath, sysinfo.New(false))
+	if err != nil {
+		return err
+	}
+
+	cmd := info.Command
+
+	// This is not passed as part of the json, set it back
+	cmd.Env = info.Env
+
+	// We want neither a separate session nor a
+	// tty that we control in forground mode, so
+	// just always set these to false and inherit
+	// std* and tty from the caller
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Setctty: false,
+		Setsid:  false,
+	}
+	cmd.Tty = false
+	cmd.Console = ""
+
+	// We manually set Stdin here, to avoid SetTerminal overriding it with a pipe
+	// as we really want to inherit *the* stdin fd
+	cmd.Stdin = os.Stdin
+
+	pipes := execdriver.NewPipes(nil, os.Stdout, os.Stderr, false)
+
+	exitCode, err := driver.Run(&cmd, pipes, func(*execdriver.Command) {})
+	if err != nil {
+		return err
+	}
+
+	rwc.Write([]byte(strconv.Itoa(exitCode)))
+
 	return nil
 }
 

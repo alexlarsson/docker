@@ -528,6 +528,66 @@ func (container *Container) prepareForStart() error {
 	return nil
 }
 
+func (container *Container) ForkStart() (res *execdriver.ForkInfo, err error) {
+	container.Lock()
+	defer container.Unlock()
+
+	if container.State.IsRunning() {
+		return nil, fmt.Errorf("The container %s is already running.", container.ID)
+	}
+
+	defer func() {
+		if err != nil {
+			if container.runtime.srv.IsRunning() {
+				container.State.SetStopped(-1)
+				if err := container.ToDisk(); err != nil {
+					utils.Debugf("%s", err)
+				}
+			}
+
+			container.cleanup()
+		}
+	}()
+
+	if err := container.prepareForStart(); err != nil {
+		return nil, err
+	}
+
+	container.State.SetRunning(0)
+	if err := container.ToDisk(); err != nil {
+		utils.Debugf("%s", err)
+	}
+
+	info := &execdriver.ForkInfo{
+		Command:     *container.command,
+		Env:         container.command.Env,
+		Root:        container.runtime.config.Root,
+		SysInitPath: container.runtime.sysInitPath,
+		ExecDriver:  container.ExecDriver,
+	}
+
+	return info, nil
+}
+
+func (container *Container) ForkEnd(exitStatus int) {
+	if container.runtime.srv.IsRunning() {
+		container.State.SetStopped(exitStatus)
+
+		if err := container.ToDisk(); err != nil {
+			utils.Errorf("Error dumping container state to disk: %s\n", err)
+		}
+	}
+
+	// Cleanup
+	container.cleanup()
+
+	if container.runtime != nil && container.runtime.srv != nil {
+		container.runtime.srv.LogEvent("die", container.ID, container.runtime.repositories.ImageName(container.Image))
+	}
+
+	close(container.waitLock)
+}
+
 func (container *Container) Start() (err error) {
 	container.Lock()
 	defer container.Unlock()
@@ -872,6 +932,10 @@ func (container *Container) Kill() error {
 		return nil
 	}
 
+	if container.State.Pid == 0 {
+		return fmt.Errorf("Can't kill forked container")
+	}
+
 	// 1. Send SIGKILL
 	if err := container.KillSig(9); err != nil {
 		return err
@@ -895,6 +959,10 @@ func (container *Container) Kill() error {
 func (container *Container) Stop(seconds int) error {
 	if !container.State.IsRunning() {
 		return nil
+	}
+
+	if container.State.Pid == 0 {
+		return fmt.Errorf("Can't stop forked container")
 	}
 
 	// 1. Send a SIGTERM

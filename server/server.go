@@ -68,6 +68,8 @@ func InitServer(job *engine.Job) engine.Status {
 		"stop":             srv.ContainerStop,
 		"restart":          srv.ContainerRestart,
 		"start":            srv.ContainerStart,
+		"fork":             srv.ContainerFork,
+		"fork_end":         srv.ContainerForkEnd,
 		"kill":             srv.ContainerKill,
 		"wait":             srv.ContainerWait,
 		"tag":              srv.ImageTag,
@@ -2080,6 +2082,52 @@ func (srv *Server) ContainerStart(job *engine.Job) engine.Status {
 		return job.Errorf("Cannot start container %s: %s", name, err)
 	}
 	srv.LogEvent("start", container.ID, runtime.Repositories().ImageName(container.Image))
+
+	return engine.StatusOK
+}
+
+func (srv *Server) ContainerFork(job *engine.Job) engine.Status {
+	if len(job.Args) < 1 {
+		return job.Errorf("Usage: %s container_id", job.Name)
+	}
+	name := job.Args[0]
+	runtime := srv.runtime
+	container := runtime.Get(name)
+
+	if container == nil {
+		return job.Errorf("No such container: %s", name)
+	}
+
+	command, err := container.ForkStart()
+	if err != nil {
+		return job.Errorf("Cannot start container %s: %s", name, err)
+	}
+
+	srv.LogEvent("start", container.ID, runtime.Repositories().ImageName(container.Image))
+
+	b, err := json.Marshal(command)
+	if err != nil {
+		return job.Error(err)
+	}
+	job.Stdout.Write(b)
+
+	return engine.StatusOK
+}
+
+func (srv *Server) ContainerForkEnd(job *engine.Job) engine.Status {
+	if len(job.Args) < 2 {
+		return job.Errorf("Usage: %s container_id", job.Name)
+	}
+	name := job.Args[0]
+	exitCode, _ := strconv.ParseInt(job.Args[1], 10, 32)
+	runtime := srv.runtime
+	container := runtime.Get(name)
+
+	if container == nil {
+		return job.Errorf("No such container: %s", name)
+	}
+
+	container.ForkEnd(int(exitCode))
 
 	return engine.StatusOK
 }
