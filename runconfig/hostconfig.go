@@ -3,21 +3,17 @@ package runconfig
 import (
 	"github.com/dotcloud/docker/engine"
 	"github.com/dotcloud/docker/nat"
+	"github.com/dotcloud/docker/utils"
 )
 
 type HostConfig struct {
 	Binds           []string
 	ContainerIDFile string
-	LxcConf         []KeyValuePair
+	LxcConf         utils.KeyValuePairs
 	Privileged      bool
 	PortBindings    nat.PortMap
 	Links           []string
 	PublishAllPorts bool
-}
-
-type KeyValuePair struct {
-	Key   string
-	Value string
 }
 
 func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {

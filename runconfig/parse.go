@@ -148,7 +148,7 @@ func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Conf
 		entrypoint = []string{*flEntrypoint}
 	}
 
-	lxcConf, err := parseLxcConfOpts(flLxcOpts)
+	lxcConf, err := parseKeyValueOpts(flLxcOpts)
 	if err != nil {
 		return nil, nil, cmd, err
 	}
@@ -225,22 +225,22 @@ func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Conf
 	return config, hostConfig, cmd, nil
 }
 
-func parseLxcConfOpts(opts opts.ListOpts) ([]KeyValuePair, error) {
-	out := make([]KeyValuePair, opts.Len())
+func parseKeyValueOpts(opts opts.ListOpts) (utils.KeyValuePairs, error) {
+	out := make(utils.KeyValuePairs, opts.Len())
 	for i, o := range opts.GetAll() {
-		k, v, err := parseLxcOpt(o)
+		k, v, err := parseKeyValueOpt(o)
 		if err != nil {
 			return nil, err
 		}
-		out[i] = KeyValuePair{Key: k, Value: v}
+		out[i] = utils.KeyValuePair{Key: k, Value: v}
 	}
 	return out, nil
 }
 
-func parseLxcOpt(opt string) (string, string, error) {
+func parseKeyValueOpt(opt string) (string, string, error) {
 	parts := strings.SplitN(opt, "=", 2)
 	if len(parts) != 2 {
-		return "", "", fmt.Errorf("Unable to parse lxc conf option: %s", opt)
+		return "", "", fmt.Errorf("Unable to parse key/value option: %s", opt)
 	}
 	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1]), nil
 }

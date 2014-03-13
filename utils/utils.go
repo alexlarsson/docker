@@ -25,6 +25,13 @@ import (
 	"time"
 )
 
+type KeyValuePairs []KeyValuePair
+
+type KeyValuePair struct {
+	Key   string
+	Value string
+}
+
 // A common interface to access the Fatal method of
 // both testing.B and testing.T.
 type Fataler interface {

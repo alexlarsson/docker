@@ -360,8 +360,7 @@ func (container *Container) Attach(stdin io.ReadCloser, stdinCloser io.Closer, s
 
 func populateCommand(c *Container) {
 	var (
-		en           *execdriver.Network
-		driverConfig []string
+		en *execdriver.Network
 	)
 
 	if !c.Config.NetworkDisabled {
@@ -375,10 +374,10 @@ func populateCommand(c *Container) {
 		}
 	}
 
+	driverConfig := make(map[string]utils.KeyValuePairs)
+
 	if lxcConf := c.hostConfig.LxcConf; lxcConf != nil {
-		for _, pair := range lxcConf {
-			driverConfig = append(driverConfig, fmt.Sprintf("%s = %s", pair.Key, pair.Value))
-		}
+		driverConfig["lxc"] = lxcConf
 	}
 	resources := &execdriver.Resources{
 		Memory:     c.Config.Memory,
