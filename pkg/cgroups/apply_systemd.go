@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"github.com/dotcloud/docker/pkg/systemd"
 	"path/filepath"
+	"strconv"
+	"strings"
 )
 
 type systemdCgroup struct {
@@ -18,9 +20,49 @@ func useSystemd() bool {
 	return manager != nil && manager.HasStartTransientUnit
 }
 
+func getIfaceForUnit(unitName string) string {
+	if strings.HasSuffix(unitName, ".scope") {
+		return "org.freedesktop.systemd1.Scope"
+	}
+	if strings.HasSuffix(unitName, ".service") {
+		return "org.freedesktop.systemd1.Service"
+	}
+	return "org.freedesktop.systemd1.Unit"
+}
+
+// This is kind of a hack which moves a process into the
+// cgroup of an existing unit. We do this by trying
+// to add the pid to each possible cgroup with the
+// systemd cgroup path. We join the name=systemd
+// cgroup first, to ensure that on any races systemd
+// will think the process is in that cgroup.
+func joinUnit(unit *systemd.Unit, unitName string, pid int) error {
+	cgroup, err := unit.GetProperty(getIfaceForUnit(unitName), "ControlGroup")
+	if err != nil {
+		return err
+	}
+
+	subsystems, err := GetAllSubsystems()
+	if err != nil {
+		return err
+	}
+
+	// Loop in reverse order to do the name=systemd one first
+	for i := len(subsystems) - 1; i >= 0; i-- {
+		subsyst := subsystems[i]
+		mountpoint, _ := FindCgroupMountpoint(subsyst)
+		if mountpoint != "" {
+			path := filepath.Join(mountpoint, cgroup.(string))
+			writeFile(path, "cgroup.procs", strconv.Itoa(pid))
+		}
+	}
+	return nil
+}
+
 func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 	unitName := c.Parent + "-" + c.Name + ".scope"
 	slice := "system.slice"
+	reuseUnit := false
 
 	properties := []systemd.Property{}
 
@@ -28,15 +70,20 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 		switch v[0] {
 		case "Slice":
 			slice = v[1]
+		case "ReuseUnit":
+			reuseUnit = true
+			unitName = v[1]
 		default:
 			return nil, fmt.Errorf("Unknown unit propery %s", v[0])
 		}
 	}
 
-	properties = append(properties,
-		systemd.Property{"Slice", slice},
-		systemd.Property{"Description", "docker container " + c.Name},
-		systemd.Property{"PIDs", []uint32{uint32(pid)}})
+	if !reuseUnit {
+		properties = append(properties,
+			systemd.Property{"Slice", slice},
+			systemd.Property{"Description", "docker container " + c.Name},
+			systemd.Property{"PIDs", []uint32{uint32(pid)}})
+	}
 
 	if !c.DeviceAccess {
 		properties = append(properties,
@@ -73,18 +120,38 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 		return nil, err
 	}
 
-	if err := manager.StartTransientUnit(unitName, "replace", properties); err != nil {
-		return nil, err
+	var unit *systemd.Unit
+
+	if reuseUnit {
+		unit, err = manager.GetUnit(unitName)
+		if err != nil {
+			return nil, err
+		}
+
+		// Before we change any properties w switch the pid into the cgroups of
+		// the existing unit. That way any rebuilding of the cgroup triggered by
+		// the property change happens after we joined.
+		if err := joinUnit(unit, unitName, pid); err != nil {
+			return nil, err
+		}
+
+		if err := manager.SetUnitProperties(unitName, true, properties); err != nil {
+			return nil, err
+		}
+	} else {
+		if err := manager.StartTransientUnit(unitName, "replace", properties); err != nil {
+			return nil, err
+		}
+
+		unit, err = manager.GetUnit(unitName)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// To work around the lack of /dev/pts/* support above we need to manually add these
 	// so, ask systemd for the cgroup used
-	unit, err := manager.GetUnit(unitName)
-	if err != nil {
-		return nil, err
-	}
-
-	cgroup, err := unit.GetProperty("org.freedesktop.systemd1.Scope", "ControlGroup")
+	cgroup, err := unit.GetProperty(getIfaceForUnit(unitName), "ControlGroup")
 	if err != nil {
 		return nil, err
 	}

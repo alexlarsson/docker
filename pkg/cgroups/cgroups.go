@@ -84,6 +84,27 @@ func parseCgroupFile(subsystem string, r io.Reader) (string, error) {
 	return "", fmt.Errorf("cgroup '%s' not found in /proc/self/cgroup", subsystem)
 }
 
+func GetAllSubsystems() ([]string, error) {
+	f, err := os.Open("/proc/1/cgroup")
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+
+	var subsystems []string
+
+	s := bufio.NewScanner(f)
+	for s.Scan() {
+		if err := s.Err(); err != nil {
+			return nil, err
+		}
+		text := s.Text()
+		parts := strings.Split(text, ":")
+		subsystems = append(subsystems, parts[1])
+	}
+	return subsystems, nil
+}
+
 func writeFile(dir, file, data string) error {
 	return ioutil.WriteFile(filepath.Join(dir, file), []byte(data), 0700)
 }
