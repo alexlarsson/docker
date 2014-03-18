@@ -903,11 +903,16 @@ func (devices *DeviceSet) MountDevice(hash, path string, mountLabel string) erro
 
 	var flags uintptr = sysMsMgcVal
 
+	fstype, err := ProbeFsType(info.DevName())
+	if err != nil {
+		return err
+	}
+
 	mountOptions := label.FormatMountLabel("discard", mountLabel)
-	err = sysMount(info.DevName(), path, "ext4", flags, mountOptions)
+	err = sysMount(info.DevName(), path, fstype, flags, mountOptions)
 	if err != nil && err == sysEInval {
 		mountOptions = label.FormatMountLabel(mountLabel, "")
-		err = sysMount(info.DevName(), path, "ext4", flags, mountOptions)
+		err = sysMount(info.DevName(), path, fstype, flags, mountOptions)
 	}
 	if err != nil {
 		return fmt.Errorf("Error mounting '%s' on '%s': %s", info.DevName(), path, err)

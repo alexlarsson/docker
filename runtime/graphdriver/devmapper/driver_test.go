@@ -452,6 +452,10 @@ func TestDriverCreate(t *testing.T) {
 		return nil
 	}
 
+	ProbeFsType = func(device string) (string, error) {
+		return "ext4", nil
+	}
+
 	Mounted = func(mnt string) (bool, error) {
 		calls["Mounted"] = true
 		if !strings.HasPrefix(mnt, "/tmp/docker-test-devmapper-") || !strings.HasSuffix(mnt, "/mnt/1") {
@@ -573,6 +577,9 @@ func TestDriverRemove(t *testing.T) {
 			t.Fatalf("Wrong syscall call\nExpected: Mount(%v)\nReceived: Mount(%v)\n", expectedFlags, flags)
 		}
 		return nil
+	}
+	ProbeFsType = func(device string) (string, error) {
+		return "ext4", nil
 	}
 	Mounted = func(mnt string) (bool, error) {
 		calls["Mounted"] = true
