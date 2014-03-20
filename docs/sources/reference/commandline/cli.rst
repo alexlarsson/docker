@@ -444,6 +444,57 @@ not overridden in the JSON hash will be merged in.
     $ sudo docker cp 7bb0e258aefe:/etc/debian_version .
     $ sudo docker cp blue_frog:/etc/hosts .
 
+.. _cli_create:
+
+``create``
+----------
+
+::
+
+    Usage: docker create [OPTIONS] IMAGE[:TAG] [COMMAND] [ARG...]
+
+    Creates a new container.
+
+      -a, --attach=map[]: Attach to stdin, stdout or stderr
+      -c, --cpu-shares=0: CPU shares (relative weight)
+      --cidfile="": Write the container ID to the file
+      -e, --env=[]: Set environment variables
+      -h, --hostname="": Container host name
+      -i, --interactive=false: Keep stdin open even if not attached
+      --privileged=false: Give extended privileges to this container
+      -m, --memory="": Memory limit (format: <number><optional unit>, where unit = b, k, m or g)
+      -n, --networking=true: Enable networking for this container
+      -p, --publish=[]: Map a network port to the container
+      -t, --tty=false: Allocate a pseudo-tty
+      -u, --user="": Username or UID
+      --dns=[]: Set custom dns servers for the container
+      -v, --volume=[]: Create a bind mount to a directory or file with: [host-path]:[container-path]:[rw|ro]. If a directory "container-path" is missing, then docker creates a new volume.
+      --volumes-from="": Mount all volumes from the given container(s)
+      --entrypoint="": Overwrite the default entrypoint set by the image
+      -w, --workdir="": Working directory inside the container
+      --lxc-conf=[]: Add custom lxc options --lxc-conf="lxc.cgroup.cpuset.cpus = 0,1"
+      --expose=[]: Expose a port from the container without publishing it to your host
+      --link="": Add link to another container (name:alias)
+      --name="": Assign the specified name to the container. If no name is specific docker will generate a random name
+      -P, --publish-all=false: Publish all exposed ports to the host interfaces
+
+The ``docker create`` command ``creates`` a writeable container layer
+over the specified image, and prepares it for running the specified
+command. The container id is then printed to stdout. This is similar
+to what :ref:`docker run -d <cli_run>`, does except the container is
+never started. You can then use the :ref:`docker start <cli_start>`
+command to start the container at any point.
+
+This is useful when you want to set up a container configuration ahead
+of time, so that it is ready to start when you need it.
+
+.. code-block:: bash
+
+    $ sudo docker create -t -i fedora bash
+    6d8af538ec541dd581ebc2a24153a28329acb5268abe5ef868c1f1a261221752
+    $ sudo docker start -a -i 6d8af538ec5
+    bash-4.2#
+
 .. _cli_diff:
 
 ``diff``

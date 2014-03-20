@@ -23,15 +23,15 @@ func Parse(args []string, sysInfo *sysinfo.SysInfo) (*Config, *HostConfig, *flag
 	cmd := flag.NewFlagSet("run", flag.ContinueOnError)
 	cmd.SetOutput(ioutil.Discard)
 	cmd.Usage = nil
-	return parseRun(cmd, args, sysInfo)
+	return parseRun(cmd, args, sysInfo, false)
 }
 
 // FIXME: this maps the legacy commands.go code. It should be merged with Parse to only expose a single parse function.
-func ParseSubcommand(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Config, *HostConfig, *flag.FlagSet, error) {
-	return parseRun(cmd, args, sysInfo)
+func ParseSubcommand(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo, create bool) (*Config, *HostConfig, *flag.FlagSet, error) {
+	return parseRun(cmd, args, sysInfo, create)
 }
 
-func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Config, *HostConfig, *flag.FlagSet, error) {
+func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo, create bool) (*Config, *HostConfig, *flag.FlagSet, error) {
 	var (
 		// FIXME: use utils.ListOpts for attach and volumes?
 		flAttach  = opts.NewListOpts(opts.ValidateAttach)
@@ -47,8 +47,9 @@ func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Conf
 		flLxcOpts     opts.ListOpts
 		flUnitOpts    opts.ListOpts
 
-		flAutoRemove      = cmd.Bool([]string{"#rm", "-rm"}, false, "Automatically remove the container when it exits (incompatible with -d)")
-		flDetach          = cmd.Bool([]string{"d", "-detach"}, false, "Detached mode: Run container in the background, print new container id")
+		FalseVal          bool
+		flAutoRemove      = &FalseVal
+		flDetach          = &FalseVal
 		flNetwork         = cmd.Bool([]string{"n", "-networking"}, true, "Enable networking for this container")
 		flPrivileged      = cmd.Bool([]string{"#privileged", "-privileged"}, false, "Give extended privileges to this container")
 		flPublishAll      = cmd.Bool([]string{"P", "-publish-all"}, false, "Publish all exposed ports to the host interfaces")
@@ -63,10 +64,18 @@ func parseRun(cmd *flag.FlagSet, args []string, sysInfo *sysinfo.SysInfo) (*Conf
 		flCpuShares       = cmd.Int64([]string{"c", "-cpu-shares"}, 0, "CPU shares (relative weight)")
 
 		// For documentation purpose
-		_ = cmd.Bool([]string{"#sig-proxy", "-sig-proxy"}, true, "Proxify all received signal to the process (even in non-tty mode)")
 		_ = cmd.String([]string{"#name", "-name"}, "", "Assign a name to the container")
 		_ = cmd.Bool([]string{"#foreground", "-foreground"}, false, "Run in foreground")
 	)
+
+	// Some operations don't apply to docker create (as they are are not stored in the container confid)
+	if !create {
+		flAutoRemove = cmd.Bool([]string{"#rm", "-rm"}, false, "Automatically remove the container when it exits (incompatible with -d)")
+		flDetach = cmd.Bool([]string{"d", "-detach"}, false, "Detached mode: Run container in the background, print new container id")
+
+		// For documentation purpose
+		_ = cmd.Bool([]string{"#sig-proxy", "-sig-proxy"}, true, "Proxify all received signal to the process (even in non-tty mode)")
+	}
 
 	cmd.Var(&flAttach, []string{"a", "-attach"}, "Attach to stdin, stdout or stderr.")
 	cmd.Var(&flVolumes, []string{"v", "-volume"}, "Bind mount a volume (e.g. from the host: -v /host:/container, from docker: -v /container)")

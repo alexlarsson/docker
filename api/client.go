@@ -88,6 +88,7 @@ func (cli *DockerCli) CmdHelp(args ...string) error {
 		{"build", "Build a container from a Dockerfile"},
 		{"commit", "Create a new image from a container's changes"},
 		{"cp", "Copy files/folders from the containers filesystem to the host path"},
+		{"create", "Create a new container"},
 		{"diff", "Inspect changes on a container's filesystem"},
 		{"events", "Get real time events from the server"},
 		{"export", "Stream the contents of a container as a tar archive"},
@@ -1755,9 +1756,110 @@ func (cli *DockerCli) CmdTag(args ...string) error {
 	return nil
 }
 
+func (cli *DockerCli) pullImage(image string) error {
+	v := url.Values{}
+	repos, tag := utils.ParseRepositoryTag(image)
+	v.Set("fromImage", repos)
+	v.Set("tag", tag)
+
+	// Resolve the Repository name from fqn to hostname + name
+	hostname, _, err := registry.ResolveRepositoryName(repos)
+	if err != nil {
+		return err
+	}
+
+	// Load the auth config file, to be able to pull the image
+	cli.LoadConfigFile()
+
+	// Resolve the Auth config relevant for this server
+	authConfig := cli.configFile.ResolveAuthConfig(hostname)
+	buf, err := json.Marshal(authConfig)
+	if err != nil {
+		return err
+	}
+
+	registryAuthHeader := []string{
+		base64.URLEncoding.EncodeToString(buf),
+	}
+	if err = cli.stream("POST", "/images/create?"+v.Encode(), nil, cli.err, map[string][]string{"X-Registry-Auth": registryAuthHeader}); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (cli *DockerCli) CmdCreate(args ...string) error {
+	// FIXME: just use runconfig.Parse already
+	config, hostConfig, cmd, err := runconfig.ParseSubcommand(cli.Subcmd("create", "[OPTIONS] IMAGE [COMMAND] [ARG...]", "Create a new container"), args, nil, true)
+	if err != nil {
+		return err
+	}
+	if config.Image == "" {
+		cmd.Usage()
+		return nil
+	}
+
+	// Retrieve relevant client-side config
+	var (
+		flName = cmd.Lookup("name")
+	)
+
+	var containerIDFile io.WriteCloser
+	if len(hostConfig.ContainerIDFile) > 0 {
+		if _, err := os.Stat(hostConfig.ContainerIDFile); err == nil {
+			return fmt.Errorf("Container ID file found, make sure the other container isn't running or delete %s", hostConfig.ContainerIDFile)
+		}
+		if containerIDFile, err = os.Create(hostConfig.ContainerIDFile); err != nil {
+			return fmt.Errorf("Failed to create the container ID file: %s", err)
+		}
+		defer containerIDFile.Close()
+	}
+
+	containerValues := url.Values{}
+	if name := flName.Value.String(); name != "" {
+		containerValues.Set("name", name)
+	}
+
+	//create the container
+	stream, statusCode, err := cli.call("POST", "/containers/create?"+containerValues.Encode(), runconfig.MergeConfigs(config, hostConfig), false)
+	//if image not found try to pull it
+	if statusCode == 404 {
+		fmt.Fprintf(cli.err, "Unable to find image '%s' locally\n", config.Image)
+
+		if err = cli.pullImage(config.Image); err != nil {
+			return err
+		}
+		// Retry
+		if stream, _, err = cli.call("POST", "/containers/create?"+containerValues.Encode(), config, false); err != nil {
+			return err
+		}
+
+	} else if err != nil {
+		return err
+	}
+
+	var createResult engine.Env
+	if err := createResult.Decode(stream); err != nil {
+		return err
+	}
+
+	for _, warning := range createResult.GetList("Warnings") {
+		fmt.Fprintf(cli.err, "WARNING: %s\n", warning)
+	}
+
+	if len(hostConfig.ContainerIDFile) > 0 {
+		if _, err = containerIDFile.Write([]byte(createResult.Get("Id"))); err != nil {
+			return fmt.Errorf("Failed to write the container ID to the file: %s", err)
+		}
+	}
+
+	fmt.Fprintf(cli.out, "%s\n", createResult.Get("Id"))
+
+	return nil
+}
+
 func (cli *DockerCli) CmdRun(args ...string) error {
 	// FIXME: just use runconfig.Parse already
-	config, hostConfig, cmd, err := runconfig.ParseSubcommand(cli.Subcmd("run", "[OPTIONS] IMAGE [COMMAND] [ARG...]", "Run a command in a new container"), args, nil)
+	config, hostConfig, cmd, err := runconfig.ParseSubcommand(cli.Subcmd("run", "[OPTIONS] IMAGE [COMMAND] [ARG...]", "Run a command in a new container"), args, nil, false)
 	if err != nil {
 		return err
 	}
@@ -1832,33 +1934,10 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 	if statusCode == 404 {
 		fmt.Fprintf(cli.err, "Unable to find image '%s' locally\n", config.Image)
 
-		v := url.Values{}
-		repos, tag := utils.ParseRepositoryTag(config.Image)
-		v.Set("fromImage", repos)
-		v.Set("tag", tag)
-
-		// Resolve the Repository name from fqn to hostname + name
-		hostname, _, err := registry.ResolveRepositoryName(repos)
-		if err != nil {
+		if err = cli.pullImage(config.Image); err != nil {
 			return err
 		}
-
-		// Load the auth config file, to be able to pull the image
-		cli.LoadConfigFile()
-
-		// Resolve the Auth config relevant for this server
-		authConfig := cli.configFile.ResolveAuthConfig(hostname)
-		buf, err := json.Marshal(authConfig)
-		if err != nil {
-			return err
-		}
-
-		registryAuthHeader := []string{
-			base64.URLEncoding.EncodeToString(buf),
-		}
-		if err = cli.stream("POST", "/images/create?"+v.Encode(), nil, cli.err, map[string][]string{"X-Registry-Auth": registryAuthHeader}); err != nil {
-			return err
-		}
+		// Retry
 		if stream, _, err = cli.call("POST", "/containers/create?"+containerValues.Encode(), config, false); err != nil {
 			return err
 		}
