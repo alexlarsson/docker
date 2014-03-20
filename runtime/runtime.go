@@ -849,6 +849,10 @@ func (runtime *Runtime) Unmount(container *Container) error {
 	return nil
 }
 
+func (runtime *Runtime) DriverOperation(op string, args []string) error {
+	return runtime.driver.Operation(op, args)
+}
+
 func (runtime *Runtime) Changes(container *Container) ([]archive.Change, error) {
 	if differ, ok := runtime.driver.(graphdriver.Differ); ok {
 		return differ.Changes(container.ID)

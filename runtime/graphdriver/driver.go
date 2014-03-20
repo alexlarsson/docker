@@ -21,6 +21,7 @@ type Driver interface {
 	Exists(id string) bool
 
 	Status() [][2]string
+	Operation(op string, args []string) error
 
 	Cleanup() error
 }

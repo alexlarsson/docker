@@ -51,6 +51,10 @@ func (d *Driver) Status() [][2]string {
 	return nil
 }
 
+func (d *Driver) Operation(op string, args []string) error {
+	return fmt.Errorf("Operation %s not supported", op)
+}
+
 func (d *Driver) Cleanup() error {
 	return nil
 }

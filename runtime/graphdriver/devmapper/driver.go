@@ -9,6 +9,8 @@ import (
 	"io/ioutil"
 	"os"
 	"path"
+	"strconv"
+	"strings"
 )
 
 func init() {
@@ -54,6 +56,91 @@ func (d *Driver) Status() [][2]string {
 		{"Metadata Space Total", fmt.Sprintf("%.1f Mb", float64(s.Metadata.Total)/(1024*1024))},
 	}
 	return status
+}
+
+func byteSizeFromString(arg string) (int64, error) {
+	digits := ""
+	rest := ""
+	last := strings.LastIndexAny(arg, "0123456789")
+	if last >= 0 {
+		digits = arg[:last+1]
+		rest = arg[last+1:]
+	}
+
+	val, err := strconv.ParseInt(digits, 10, 64)
+	if err != nil {
+		return val, err
+	}
+
+	rest = strings.ToLower(strings.TrimSpace(rest))
+
+	var multiplier int64 = 1
+	switch rest {
+	case "":
+		multiplier = 1
+	case "k", "kb":
+		multiplier = 1024
+	case "m", "mb":
+		multiplier = 1024 * 1024
+	case "g", "gb":
+		multiplier = 1024 * 1024 * 1024
+	case "t", "tb":
+		multiplier = 1024 * 1024 * 1024 * 1024
+	default:
+		return 0, fmt.Errorf("Unknown size unit: %s", rest)
+	}
+
+	return val * multiplier, nil
+}
+
+func (d *Driver) Operation(op string, args []string) error {
+	switch op {
+	case "trim-pool":
+		if len(args) != 0 {
+			return fmt.Errorf("Usage: trim-pool")
+		}
+
+		err := d.DeviceSet.TrimPool()
+		if err != nil {
+			return fmt.Errorf("Error trimming pool: %s", err.Error())
+		}
+
+		return nil
+	case "resize-pool":
+		if len(args) != 1 {
+			return fmt.Errorf("Usage: resize-pool NEW_SIZE")
+		}
+
+		size, err := byteSizeFromString(args[0])
+		if err != nil {
+			return fmt.Errorf("Invalid size: %s", args[0])
+		}
+
+		err = d.DeviceSet.ResizePool(size)
+		if err != nil {
+			return fmt.Errorf("Error resizing pool: %s", err.Error())
+		}
+
+		return nil
+	case "resize":
+		if len(args) != 2 {
+			return fmt.Errorf("Usage: resize IMAGE/CONTAINER NEW_SIZE")
+		}
+
+		size, err := byteSizeFromString(args[1])
+		if err != nil {
+			return fmt.Errorf("Invalid size: %s", args[0])
+		}
+
+		err = d.DeviceSet.ResizeDevice(args[0], size)
+		if err != nil {
+			return fmt.Errorf("Error resizing %s: %s", args[0], err.Error())
+		}
+
+		return nil
+	default:
+		return fmt.Errorf("Operation %s not supported", op)
+	}
 }
 
 func (d *Driver) Cleanup() error {
