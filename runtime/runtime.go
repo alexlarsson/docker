@@ -582,6 +582,53 @@ func (runtime *Runtime) Commit(container *Container, repository, tag, comment, a
 	return img, nil
 }
 
+// Squash creates a new filesystem image by combining multiple layers
+// The image can optionally be tagged into a repository
+func (runtime *Runtime) Squash(baseID string, leaf *image.Image, repository, tag, comment string) (*image.Image, error) {
+	basePath, err := runtime.driver.Get(baseID)
+	if err != nil {
+		return nil, err
+	}
+	defer runtime.driver.Put(baseID)
+
+	leafPath, err := runtime.driver.Get(leaf.ID)
+	if err != nil {
+		return nil, err
+	}
+	defer runtime.driver.Put(leaf.ID)
+
+	changes, err := archive.ChangesDirs(leafPath, basePath)
+	if err != nil {
+		return nil, err
+	}
+
+	archive, err := archive.ExportChanges(leafPath, changes)
+	if err != nil {
+		return nil, err
+	}
+	defer archive.Close()
+
+	config := leaf.Config
+	// Make a copy of the config in case it is modified
+	if config != nil {
+		c := *config
+		config = &c
+	}
+
+	img, err := runtime.graph.Create(archive, "", baseID, comment, leaf.Author, nil, config)
+	if err != nil {
+		return nil, err
+	}
+
+	// Register the image if needed
+	if repository != "" {
+		if err := runtime.repositories.Set(repository, tag, img.ID, true); err != nil {
+			return img, err
+		}
+	}
+	return img, nil
+}
+
 func GetFullContainerName(name string) (string, error) {
 	if name == "" {
 		return "", fmt.Errorf("Container name cannot be empty")
