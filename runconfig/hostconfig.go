@@ -32,10 +32,22 @@ func MergeConfigs(config *Config, hostConfig *HostConfig) *ConfigAndHostConfig {
 	}
 }
 
-func ContainerHostConfigFromJob(job *engine.Job) *HostConfig {
+type HostConfigForeground struct {
+	CliAddressOnly string
+}
+
+func ContainerHostConfigFromJob(job *engine.Job, oldHostConfig *HostConfig) *HostConfig {
 	if job.EnvExists("HostConfig") {
 		hostConfig := HostConfig{}
 		job.GetenvJson("HostConfig", &hostConfig)
+		return &hostConfig
+	}
+	if job.EnvExists("CliAddressOnly") {
+		hostConfig := HostConfig{}
+		if oldHostConfig != nil {
+			hostConfig = *oldHostConfig
+		}
+		hostConfig.CliAddress = job.Getenv("CliAddressOnly")
 		return &hostConfig
 	}
 

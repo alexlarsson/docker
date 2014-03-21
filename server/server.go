@@ -1776,7 +1776,7 @@ func (srv *Server) ContainerCreate(job *engine.Job) engine.Status {
 	}
 
 	if job.EnvExists("HostConfig") {
-		hostConfig := runconfig.ContainerHostConfigFromJob(job)
+		hostConfig := runconfig.ContainerHostConfigFromJob(job, container.HostConfig())
 		if err := srv.setHostConfig(container, hostConfig); err != nil {
 			return job.Error(err)
 		}
@@ -2164,7 +2164,7 @@ func (srv *Server) ContainerStart(job *engine.Job) engine.Status {
 	}
 	// If no environment was set, then no hostconfig was passed.
 	if len(job.Environ()) > 0 {
-		hostConfig := runconfig.ContainerHostConfigFromJob(job)
+		hostConfig := runconfig.ContainerHostConfigFromJob(job, container.HostConfig())
 		if err := srv.setHostConfig(container, hostConfig); err != nil {
 			return job.Error(err)
 		}

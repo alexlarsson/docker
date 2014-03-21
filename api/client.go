@@ -585,6 +585,7 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 	cmd := cli.Subcmd("start", "CONTAINER [CONTAINER...]", "Restart a stopped container")
 	attach := cmd.Bool([]string{"a", "-attach"}, false, "Attach container's stdout/stderr and forward all signals to the process")
 	openStdin := cmd.Bool([]string{"i", "-interactive"}, false, "Attach container's stdin")
+	fg := cmd.Bool([]string{"#foreground", "-foreground"}, false, "Run in foreground, only allows one container")
 	if err := cmd.Parse(args); err != nil {
 		return nil
 	}
@@ -593,9 +594,30 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 		return nil
 	}
 
-	var cErr chan error
-	var tty bool
-	if *attach || *openStdin {
+	var (
+		hostConfig interface{}
+		fgDriver   *foreground.CmdDriver
+		cErr       chan error
+		tty        bool
+	)
+
+	if *fg {
+		if cmd.NArg() > 1 {
+			return fmt.Errorf("You cannot foreground multiple containers at once.")
+		}
+
+		var err error
+		fgDriver, err = foreground.NewCmdDriver(*openStdin)
+		if err != nil {
+			return err
+		}
+
+		// Start the local exec driver
+		go foreground.Serve(fgDriver)
+
+		// Tell daemon to use it
+		hostConfig = &runconfig.HostConfigForeground{CliAddressOnly: fgDriver.Address}
+	} else if *attach || *openStdin {
 		if cmd.NArg() > 1 {
 			return fmt.Errorf("You cannot start and attach multiple containers at once.")
 		}
@@ -636,27 +658,34 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 
 	var encounteredError error
 	for _, name := range cmd.Args() {
-		_, _, err := readBody(cli.call("POST", "/containers/"+name+"/start", nil, false))
+		_, _, err := readBody(cli.call("POST", "/containers/"+name+"/start", hostConfig, false))
 		if err != nil {
-			if !*attach || !*openStdin {
+			if (!*attach || !*openStdin) && !*fg {
 				fmt.Fprintf(cli.err, "%s\n", err)
 				encounteredError = fmt.Errorf("Error: failed to start one or more containers")
 			}
 		} else {
-			if !*attach || !*openStdin {
+			if (!*attach || !*openStdin) && !*fg {
 				fmt.Fprintf(cli.out, "%s\n", name)
 			}
 		}
 	}
 	if encounteredError != nil {
-		if *openStdin || *attach {
+		if (*openStdin || *attach) && !*fg {
 			cli.in.Close()
 			<-cErr
 		}
 		return encounteredError
 	}
 
-	if *openStdin || *attach {
+	if *fg {
+		if status, err := foreground.WaitForExit(fgDriver); err != nil {
+			return err
+		} else if status != 0 {
+			return &utils.StatusError{StatusCode: status}
+		}
+		return nil
+	} else if *openStdin || *attach {
 		if tty && cli.isTerminal {
 			if err := cli.monitorTtySize(cmd.Arg(0)); err != nil {
 				utils.Errorf("Error monitoring TTY size: %s\n", err)
