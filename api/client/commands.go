@@ -23,6 +23,7 @@ import (
 
 	"github.com/dotcloud/docker/api"
 	"github.com/dotcloud/docker/archive"
+	"github.com/dotcloud/docker/daemon/execdriver/foreground"
 	"github.com/dotcloud/docker/dockerversion"
 	"github.com/dotcloud/docker/engine"
 	"github.com/dotcloud/docker/nat"
@@ -554,6 +555,7 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 		cmd       = cli.Subcmd("start", "CONTAINER [CONTAINER...]", "Restart a stopped container")
 		attach    = cmd.Bool([]string{"a", "-attach"}, false, "Attach container's stdout/stderr and forward all signals to the process")
 		openStdin = cmd.Bool([]string{"i", "-interactive"}, false, "Attach container's stdin")
+		fg        = cmd.Bool([]string{"#foreground", "-foreground"}, false, "Run in foreground, only allows one container")
 	)
 	if err := cmd.Parse(args); err != nil {
 		return nil
@@ -564,10 +566,29 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 	}
 
 	var (
-		cErr chan error
-		tty  bool
+		hostConfig interface{}
+		fgDriver   *foreground.CmdDriver
+		cErr       chan error
+		tty        bool
 	)
-	if *attach || *openStdin {
+
+	if *fg {
+		if cmd.NArg() > 1 {
+			return fmt.Errorf("You cannot foreground multiple containers at once.")
+		}
+
+		var err error
+		fgDriver, err = foreground.NewCmdDriver(*openStdin)
+		if err != nil {
+			return err
+		}
+
+		// Start the local exec driver
+		go foreground.Serve(fgDriver)
+
+		// Tell daemon to use it
+		hostConfig = &runconfig.HostConfigForeground{CliAddressOnly: fgDriver.Address}
+	} else if *attach || *openStdin {
 		if cmd.NArg() > 1 {
 			return fmt.Errorf("You cannot start and attach multiple containers at once.")
 		}
@@ -608,27 +629,34 @@ func (cli *DockerCli) CmdStart(args ...string) error {
 
 	var encounteredError error
 	for _, name := range cmd.Args() {
-		_, _, err := readBody(cli.call("POST", "/containers/"+name+"/start", nil, false))
+		_, _, err := readBody(cli.call("POST", "/containers/"+name+"/start", hostConfig, false))
 		if err != nil {
-			if !*attach || !*openStdin {
+			if (!*attach || !*openStdin) && !*fg {
 				fmt.Fprintf(cli.err, "%s\n", err)
 			}
 			encounteredError = fmt.Errorf("Error: failed to start one or more containers")
 		} else {
-			if !*attach || !*openStdin {
+			if (!*attach || !*openStdin) && !*fg {
 				fmt.Fprintf(cli.out, "%s\n", name)
 			}
 		}
 	}
 	if encounteredError != nil {
-		if *openStdin || *attach {
+		if (*openStdin || *attach) && !*fg {
 			cli.in.Close()
 			<-cErr
 		}
 		return encounteredError
 	}
 
-	if *openStdin || *attach {
+	if *fg {
+		if status, err := foreground.WaitForExit(fgDriver); err != nil {
+			return err
+		} else if status != 0 {
+			return &utils.StatusError{StatusCode: status}
+		}
+		return nil
+	} else if *openStdin || *attach {
 		if tty && cli.isTerminal {
 			if err := cli.monitorTtySize(cmd.Arg(0)); err != nil {
 				utils.Errorf("Error monitoring TTY size: %s\n", err)
@@ -1788,8 +1816,10 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 		flName        = cmd.Lookup("name")
 		flRm          = cmd.Lookup("rm")
 		flSigProxy    = cmd.Lookup("sig-proxy")
+		flForeground  = cmd.Lookup("foreground")
 		autoRemove, _ = strconv.ParseBool(flRm.Value.String())
 		sigProxy, _   = strconv.ParseBool(flSigProxy.Value.String())
+		fg, _         = strconv.ParseBool(flForeground.Value.String())
 	)
 
 	// Disable sigProxy in case on TTY
@@ -1825,6 +1855,20 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 	containerValues := url.Values{}
 	if name := flName.Value.String(); name != "" {
 		containerValues.Set("name", name)
+	}
+
+	var fgDriver *foreground.CmdDriver
+	if fg {
+		fgDriver, err = foreground.NewCmdDriver(config.AttachStdin)
+		if err != nil {
+			return err
+		}
+
+		// Start the local exec driver
+		go foreground.Serve(fgDriver)
+
+		// Tell daemon to use it
+		hostConfig.CliAddress = fgDriver.Address
 	}
 
 	//create the container
@@ -1917,7 +1961,7 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 		}
 	}()
 
-	if config.AttachStdin || config.AttachStdout || config.AttachStderr {
+	if !fg && (config.AttachStdin || config.AttachStdout || config.AttachStderr) {
 		var (
 			out, stderr io.Writer
 			in          io.ReadCloser
@@ -1969,7 +2013,7 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 		return err
 	}
 
-	if (config.AttachStdin || config.AttachStdout || config.AttachStderr) && config.Tty && cli.isTerminal {
+	if (config.AttachStdin || config.AttachStdout || config.AttachStderr) && config.Tty && cli.isTerminal && !fg {
 		if err := cli.monitorTtySize(runResult.Get("Id")); err != nil {
 			utils.Errorf("Error monitoring TTY size: %s\n", err)
 		}
@@ -2005,7 +2049,11 @@ func (cli *DockerCli) CmdRun(args ...string) error {
 			return err
 		}
 	} else {
-		if !config.Tty {
+		if fgDriver != nil {
+			if status, err = foreground.WaitForExit(fgDriver); err != nil {
+				return err
+			}
+		} else if !config.Tty {
 			// In non-tty mode, we can't dettach, so we know we need to wait.
 			if status, err = waitForExit(cli, runResult.Get("Id")); err != nil {
 				return err

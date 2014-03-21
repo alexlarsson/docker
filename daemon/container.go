@@ -17,6 +17,7 @@ import (
 
 	"github.com/dotcloud/docker/archive"
 	"github.com/dotcloud/docker/daemon/execdriver"
+	"github.com/dotcloud/docker/daemon/execdriver/foreground"
 	"github.com/dotcloud/docker/daemon/graphdriver"
 	"github.com/dotcloud/docker/engine"
 	"github.com/dotcloud/docker/image"
@@ -295,6 +296,10 @@ func (container *Container) Start() (err error) {
 		return err
 	}
 	container.waitLock = make(chan struct{})
+
+	if container.hostConfig.CliAddress != "" {
+		container.execDriver = foreground.NewDriver(container.hostConfig.CliAddress, container.daemon.config.Root, container.daemon.sysInitPath, container.daemon.execDriver)
+	}
 
 	return container.waitForStart()
 }

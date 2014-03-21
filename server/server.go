@@ -2041,7 +2041,7 @@ func (srv *Server) ContainerStart(job *engine.Job) engine.Status {
 	}
 	// If no environment was set, then no hostconfig was passed.
 	if len(job.Environ()) > 0 {
-		hostConfig := runconfig.ContainerHostConfigFromJob(job)
+		hostConfig := runconfig.ContainerHostConfigFromJob(job, container.HostConfig())
 		// Validate the HostConfig binds. Make sure that:
 		// 1) the source of a bind mount isn't /
 		//         The bind mount "/:/foo" isn't allowed.
