@@ -80,6 +80,7 @@ type DeviceSet struct {
 	mkfsArgs             []string
 	dataDevice           string
 	metadataDevice       string
+	doBlkDiscard         bool
 }
 
 type DiskUsage struct {
@@ -672,12 +673,14 @@ func (devices *DeviceSet) AddDevice(hash, baseHash string) error {
 }
 
 func (devices *DeviceSet) deleteDevice(info *DevInfo) error {
-	// This is a workaround for the kernel not discarding block so
-	// on the thin pool when we remove a thinp device, so we do it
-	// manually
-	if err := devices.activateDeviceIfNeeded(info); err == nil {
-		if err := BlockDeviceDiscard(info.DevName()); err != nil {
-			utils.Debugf("Error discarding block on device: %s (ignoring)\n", err)
+	if devices.doBlkDiscard {
+		// This is a workaround for the kernel not discarding block so
+		// on the thin pool when we remove a thinp device, so we do it
+		// manually
+		if err := devices.activateDeviceIfNeeded(info); err == nil {
+			if err := BlockDeviceDiscard(info.DevName()); err != nil {
+				utils.Debugf("Error discarding block on device: %s (ignoring)\n", err)
+			}
 		}
 	}
 
@@ -1185,8 +1188,10 @@ func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error
 		metaDataLoopbackSize: DefaultMetaDataLoopbackSize,
 		baseFsSize:           DefaultBaseFsSize,
 		filesystem:           "ext4",
+		doBlkDiscard:         true,
 	}
 
+	foundBlkDiscard := false
 	for _, option := range options {
 		key, val, err := utils.ParseKeyValueOpt(option)
 		if err != nil {
@@ -1225,9 +1230,20 @@ func NewDeviceSet(root string, doInit bool, options []string) (*DeviceSet, error
 			devices.metadataDevice = val
 		case "datadev":
 			devices.dataDevice = val
+		case "blkdiscard":
+			foundBlkDiscard = true
+			devices.doBlkDiscard, err = strconv.ParseBool(val)
+			if err != nil {
+				return nil, err
+			}
 		default:
 			return nil, fmt.Errorf("Unknown option %s\n", key)
 		}
+	}
+
+	// By default, don't do blk discard hack on raw devices, its rarely useful and is expensive
+	if !foundBlkDiscard && devices.dataDevice != "" {
+		devices.doBlkDiscard = false
 	}
 
 	if err := devices.initDevmapper(doInit); err != nil {
