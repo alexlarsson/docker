@@ -55,6 +55,9 @@ func rawApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 	if err := raw.setupCpu(c, pid); err != nil {
 		return nil, err
 	}
+	if err := raw.setupBlockIO(c, pid); err != nil {
+		return nil, err
+	}
 	if err := raw.setupCpuset(c, pid); err != nil {
 		return nil, err
 	}
@@ -178,6 +181,27 @@ func (raw *rawCgroup) setupMemory(c *Cgroup, pid int) (err error) {
 			}
 		} else if c.MemorySwap > 0 {
 			if err := writeFile(dir, "memory.memsw.limit_in_bytes", strconv.FormatInt(c.MemorySwap, 10)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func (raw *rawCgroup) setupBlockIO(c *Cgroup, pid int) (err error) {
+	if c.BlockIOAccounting || c.BlockIOWeight != 0 {
+		dir, e0 := raw.join("blkio", false, pid)
+		if e0 != nil {
+			return e0
+		}
+		defer func() {
+			if err != nil {
+				os.RemoveAll(dir)
+			}
+		}()
+
+		if c.BlockIOWeight != 0 {
+			if err := writeFile(dir, "blkio.weight", strconv.FormatInt(c.BlockIOWeight, 10)); err != nil {
 				return err
 			}
 		}

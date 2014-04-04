@@ -21,14 +21,16 @@ var actions = map[string]Action{
 
 	"net.join": joinNetNamespace, // join another containers net namespace
 
-	"cgroups.cpu_accounting":    accountingCpu,    // Enable memory accounting
-	"cgroups.cpu_shares":        cpuShares,        // set the cpu shares
-	"cgroups.cpu_quota":         cpuQuota,         // set the cpu quota
-	"cgroups.cpuset_cpus":       cpusetCpus,       // set the cpus used
-	"cgroups.cpuset_mems":       cpusetMems,       // set the memoy used
-	"cgroups.memory":            memory,           // set the memory limit
-	"cgroups.memory_accounting": accountingMemory, // Enable memory accounting
-	"cgroups.memory_swap":       memorySwap,       // set the memory swap limit
+	"cgroups.block_io_accounting": accountingBlockIO, // Enable memory accounting
+	"cgroups.block_io_weight":     blockIOWeight,     // set the block i/o relative weight
+	"cgroups.cpu_accounting":      accountingCpu,     // Enable memory accounting
+	"cgroups.cpu_shares":          cpuShares,         // set the cpu shares
+	"cgroups.cpu_quota":           cpuQuota,          // set the cpu quota
+	"cgroups.cpuset_cpus":         cpusetCpus,        // set the cpus used
+	"cgroups.cpuset_mems":         cpusetMems,        // set the memoy used
+	"cgroups.memory":              memory,            // set the memory limit
+	"cgroups.memory_accounting":   accountingMemory,  // Enable memory accounting
+	"cgroups.memory_swap":         memorySwap,        // set the memory swap limit
 
 	"systemd.slice": systemdSlice, // set the cpus used
 
@@ -63,6 +65,19 @@ func accountingMemory(container *libcontainer.Container, context interface{}, va
 	return nil
 }
 
+func accountingBlockIO(container *libcontainer.Container, context interface{}, value string) error {
+	if container.Cgroups == nil {
+		return fmt.Errorf("cannot set cgroups when they are disabled")
+	}
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	container.Cgroups.BlockIOAccounting = v
+
+	return nil
+}
+
 func cpusetCpus(container *libcontainer.Container, context interface{}, value string) error {
 	if container.Cgroups == nil {
 		return fmt.Errorf("cannot set cgroups when they are disabled")
@@ -92,6 +107,18 @@ func systemdSlice(container *libcontainer.Container, context interface{}, value 
 
 func apparmorProfile(container *libcontainer.Container, context interface{}, value string) error {
 	container.Context["apparmor_profile"] = value
+	return nil
+}
+
+func blockIOWeight(container *libcontainer.Container, context interface{}, value string) error {
+	if container.Cgroups == nil {
+		return fmt.Errorf("cannot set cgroups when they are disabled")
+	}
+	v, err := strconv.ParseInt(value, 10, 0)
+	if err != nil {
+		return err
+	}
+	container.Cgroups.BlockIOWeight = v
 	return nil
 }
 

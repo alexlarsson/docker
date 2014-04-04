@@ -155,6 +155,11 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 			systemd1.Property{"CPUAccounting", dbus.MakeVariant(true)})
 	}
 
+	if c.BlockIOAccounting {
+		properties = append(properties,
+			systemd1.Property{"BlockIOAccounting", dbus.MakeVariant(true)})
+	}
+
 	if c.Memory != 0 {
 		properties = append(properties,
 			systemd1.Property{"MemoryLimit", dbus.MakeVariant(uint64(c.Memory))})
@@ -163,6 +168,11 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 	if c.CpuShares != 0 {
 		properties = append(properties,
 			systemd1.Property{"CPUShares", dbus.MakeVariant(uint64(c.CpuShares))})
+	}
+
+	if c.BlockIOWeight != 0 {
+		properties = append(properties,
+			systemd1.Property{"BlockIOWeight", dbus.MakeVariant(uint64(c.BlockIOWeight))})
 	}
 
 	if _, err := theConn.StartTransientUnit(unitName, "replace", properties...); err != nil {

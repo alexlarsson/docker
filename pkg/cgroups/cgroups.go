@@ -15,16 +15,18 @@ type Cgroup struct {
 	Name   string `json:"name,omitempty"`
 	Parent string `json:"parent,omitempty"`
 
-	MemoryAccounting bool `json:"memory_accounting,omitempty"` // Enable memory accounting
-	CpuAccounting    bool `json:"cpu_accounting,omitempty"`    // Enable CPU accounting
+	MemoryAccounting  bool `json:"memory_accounting,omitempty"`   // Enable memory accounting
+	CpuAccounting     bool `json:"cpu_accounting,omitempty"`      // Enable CPU accounting
+	BlockIOAccounting bool `json:"block_io_accounting,omitempty"` // Enable Block I/O accounting
 
-	DeviceAccess bool   `json:"device_access,omitempty"` // name of parent cgroup or slice
-	Memory       int64  `json:"memory,omitempty"`        // Memory limit (in bytes)
-	MemorySwap   int64  `json:"memory_swap,omitempty"`   // Total memory usage (memory + swap); set `-1' to disable swap
-	CpuShares    int64  `json:"cpu_shares,omitempty"`    // CPU shares (relative weight vs. other containers)
-	CpuQuota     int64  `json:"cpu_quota,omitempty"`     // Max runtime in a period (in usec), 0 to disable
-	CpusetCpus   string `json:"cpuset_cpus,omitempty"`   // CPU to use
-	CpusetMems   string `json:"cpuset_mems,omitempty"`   // Memory to use
+	DeviceAccess  bool   `json:"device_access,omitempty"`   // name of parent cgroup or slice
+	Memory        int64  `json:"memory,omitempty"`          // Memory limit (in bytes)
+	MemorySwap    int64  `json:"memory_swap,omitempty"`     // Total memory usage (memory + swap); set `-1' to disable swap
+	BlockIOWeight int64  `json:"block_io_weight,omitempty"` // Relative block i/o weight
+	CpuShares     int64  `json:"cpu_shares,omitempty"`      // CPU shares (relative weight vs. other containers)
+	CpuQuota      int64  `json:"cpu_quota,omitempty"`       // Max runtime in a period (in usec), 0 to disable
+	CpusetCpus    string `json:"cpuset_cpus,omitempty"`     // CPU to use
+	CpusetMems    string `json:"cpuset_mems,omitempty"`     // Memory to use
 
 	Slice string `json:"slice,omitempty"` // Parent slice to use for systemd
 }
