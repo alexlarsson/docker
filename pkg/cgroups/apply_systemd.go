@@ -78,6 +78,7 @@ type KeyValue struct {
 func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 	unitName := c.Parent + "-" + c.Name + ".scope"
 	slice := "system.slice"
+	foreground := false
 
 	var properties []systemd1.Property
 
@@ -86,9 +87,20 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 		cpusetArgs []KeyValue
 		memoryArgs []KeyValue
 		res        systemdCgroup
+		devices    []string
 	)
 
 	// First set up things not supported by systemd
+
+	if c.Foreground {
+		cgroup, err := GetThisCgroupDir("name=systemd")
+		if err != nil {
+			return nil, err
+		}
+
+		foreground = true
+		unitName = filepath.Base(cgroup)
+	}
 
 	// -1 disables memorySwap
 	if c.MemorySwap >= 0 && (c.Memory != 0 || c.MemorySwap > 0) {
@@ -118,29 +130,60 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 		slice = c.Slice
 	}
 
-	properties = append(properties,
-		systemd1.Property{"Slice", dbus.MakeVariant(slice)},
-		systemd1.Property{"Description", dbus.MakeVariant("docker container " + c.Name)},
-		systemd1.Property{"PIDs", dbus.MakeVariant([]uint32{uint32(pid)})})
+	if !foreground {
+		properties = append(properties,
+			systemd1.Property{"Slice", dbus.MakeVariant(slice)},
+			systemd1.Property{"Description", dbus.MakeVariant("docker container " + c.Name)},
+			systemd1.Property{"PIDs", dbus.MakeVariant([]uint32{uint32(pid)})})
+	}
 
 	if !c.DeviceAccess {
-		properties = append(properties,
-			systemd1.Property{"DevicePolicy", dbus.MakeVariant("strict")},
-			systemd1.Property{"DeviceAllow", dbus.MakeVariant([]DeviceAllow{
-				{"/dev/null", "rwm"},
-				{"/dev/zero", "rwm"},
-				{"/dev/full", "rwm"},
-				{"/dev/random", "rwm"},
-				{"/dev/urandom", "rwm"},
-				{"/dev/tty", "rwm"},
-				{"/dev/console", "rwm"},
-				{"/dev/tty0", "rwm"},
-				{"/dev/tty1", "rwm"},
-				{"/dev/pts/ptmx", "rwm"},
-				// There is no way to add /dev/pts/* here atm, so we hack this manually below
-				// /dev/pts/* (how to add this?)
-				// Same with tuntap, which doesn't exist as a node most of the time
-			})})
+		if !foreground {
+			properties = append(properties,
+				systemd1.Property{"DevicePolicy", dbus.MakeVariant("strict")},
+				systemd1.Property{"DeviceAllow", dbus.MakeVariant([]DeviceAllow{
+					{"/dev/null", "rwm"},
+					{"/dev/zero", "rwm"},
+					{"/dev/full", "rwm"},
+					{"/dev/random", "rwm"},
+					{"/dev/urandom", "rwm"},
+					{"/dev/tty", "rwm"},
+					{"/dev/console", "rwm"},
+					{"/dev/tty0", "rwm"},
+					{"/dev/tty1", "rwm"},
+					{"/dev/pts/ptmx", "rwm"},
+					// There is no way to add /dev/pts/* here atm, so we hack this manually below
+					// /dev/pts/* (how to add this?)
+					// Same with tuntap, which doesn't exist as a node most of the time
+				})})
+		} else {
+			devices = append(devices,
+				// allow mknod for any device
+				"c *:* m",
+				"b *:* m",
+
+				// /dev/null, zero, full
+				"c 1:3 rwm",
+				"c 1:5 rwm",
+				"c 1:7 rwm",
+
+				// consoles
+				"c 5:1 rwm",
+				"c 5:0 rwm",
+				"c 4:0 rwm",
+				"c 4:1 rwm",
+				"c 5:2 rwm",
+
+				// /dev/urandom,/dev/random
+				"c 1:9 rwm",
+				"c 1:8 rwm")
+		}
+
+		devices = append(devices,
+			// /dev/pts/*
+			"c 136:* rwm",
+			// tuntap
+			"c 10:200 rwm")
 	}
 
 	// Ensure we have a memory cgroup if we have any memory args
@@ -165,8 +208,16 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 			systemd1.Property{"CPUShares", dbus.MakeVariant(uint64(c.CpuShares))})
 	}
 
-	if _, err := theConn.StartTransientUnit(unitName, "replace", properties...); err != nil {
-		return nil, err
+	if foreground {
+		if len(properties) > 0 {
+			if err := theConn.SetUnitProperties(unitName, true, properties...); err != nil {
+				return nil, err
+			}
+		}
+	} else {
+		if _, err := theConn.StartTransientUnit(unitName, "replace", properties...); err != nil {
+			return nil, err
+		}
 	}
 
 	// To work around the lack of /dev/pts/* support above we need to manually add these
@@ -186,13 +237,36 @@ func systemdApply(c *Cgroup, pid int) (ActiveCgroup, error) {
 
 		path := filepath.Join(mountpoint, cgroup)
 
-		// /dev/pts/*
-		if err := writeFile(path, "devices.allow", "c 136:* rwm"); err != nil {
-			return nil, err
+		if foreground {
+			// In forground mode we use the raw API to set up and join the devices hierarchy to avoid
+			// messing with the existing cgroup by default. Otherwise if you docker run --foreground
+			// in your session you'll mess with the session scope, which will break everything weirdly.
+			initPath, err := GetInitCgroupDir("devices")
+			if err != nil {
+				return nil, err
+			}
+
+			path = filepath.Join(mountpoint, initPath, c.Parent, c.Name)
+
+			res.cleanupDirs = append(res.cleanupDirs, path)
+
+			if err := os.MkdirAll(path, 0755); err != nil && !os.IsExist(err) {
+				return nil, err
+			}
+
+			if err := writeFile(path, "cgroup.procs", strconv.Itoa(pid)); err != nil {
+				return nil, err
+			}
+
+			if err := writeFile(dir, "devices.deny", "a"); err != nil {
+				return err
+			}
 		}
-		// tuntap
-		if err := writeFile(path, "devices.allow", "c 10:200 rwm"); err != nil {
-			return nil, err
+
+		for _, dev := range devices {
+			if err := writeFile(path, "devices.allow", dev); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -27,6 +27,8 @@ type Cgroup struct {
 	CpusetMems   string `json:"cpuset_mems,omitempty"`   // Memory to use
 
 	Slice string `json:"slice,omitempty"` // Parent slice to use for systemd
+
+	Foreground bool `json:"foreground,omitempty"` // executed in foreground mode
 }
 
 type ActiveCgroup interface {
