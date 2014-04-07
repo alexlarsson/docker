@@ -220,6 +220,10 @@ func (d *CmdDriver) Start(wrapper *CommandWrapper, res *int) error {
 
 	cmd := wrapper.Unwrap()
 
+	conf := cmd.Config["native"]
+	conf = append(conf, "systemd.foreground=true")
+	cmd.Config["native"] = conf
+
 	d.cmd = cmd
 
 	// We want neither a separate session nor a

@@ -30,6 +30,8 @@ var actions = map[string]Action{
 
 	"systemd.slice": systemdSlice, // set parent Slice used for systemd unit
 
+	"systemd.foreground": systemdForeground,
+
 	"apparmor_profile": apparmorProfile, // set the apparmor profile to apply
 
 	"fs.readonly": readonlyFs, // make the rootfs of the container read only
@@ -49,6 +51,19 @@ func systemdSlice(container *libcontainer.Container, context interface{}, value 
 		return fmt.Errorf("cannot set slice when cgroups are disabled")
 	}
 	container.Cgroups.Slice = value
+
+	return nil
+}
+
+func systemdForeground(container *libcontainer.Container, context interface{}, value string) error {
+	if container.Cgroups == nil {
+		return fmt.Errorf("cannot set slice when cgroups are disabled")
+	}
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return err
+	}
+	container.Cgroups.Foreground = v
 
 	return nil
 }

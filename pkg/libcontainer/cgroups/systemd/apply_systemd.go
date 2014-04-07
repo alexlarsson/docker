@@ -3,6 +3,7 @@
 package systemd
 
 import (
+	"fmt"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -85,9 +86,25 @@ func Apply(c *cgroups.Cgroup, pid int) (cgroups.ActiveCgroup, error) {
 		cpusetArgs []cgroupArg
 		memoryArgs []cgroupArg
 		res        systemdCgroup
+		foreground = false
 	)
 
 	// First set up things not supported by systemd
+	if c.Foreground {
+		cgroup, err := cgroups.GetThisCgroupDir("name=systemd")
+		if err != nil {
+			return nil, err
+		}
+
+		currentSlice := filepath.Base(filepath.Dir(cgroup))
+
+		if strings.HasSuffix(currentSlice, ".slice") && strings.HasPrefix(currentSlice, "user-") {
+			return nil, fmt.Errorf("Foreground mode not supported in user session")
+		}
+
+		foreground = true
+		unitName = filepath.Base(cgroup)
+	}
 
 	// -1 disables memorySwap
 	if c.MemorySwap >= 0 && (c.Memory != 0 || c.MemorySwap > 0) {
@@ -109,11 +126,13 @@ func Apply(c *cgroups.Cgroup, pid int) (cgroups.ActiveCgroup, error) {
 		slice = c.Slice
 	}
 
-	properties = append(properties,
-		systemd1.Property{"Slice", dbus.MakeVariant(slice)},
-		systemd1.Property{"Description", dbus.MakeVariant("docker container " + c.Name)},
-		systemd1.Property{"PIDs", dbus.MakeVariant([]uint32{uint32(pid)})},
-	)
+	if !foreground {
+		properties = append(properties,
+			systemd1.Property{"Slice", dbus.MakeVariant(slice)},
+			systemd1.Property{"Description", dbus.MakeVariant("docker container " + c.Name)},
+			systemd1.Property{"PIDs", dbus.MakeVariant([]uint32{uint32(pid)})},
+		)
+	}
 
 	if !c.DeviceAccess {
 		properties = append(properties,
@@ -153,8 +172,14 @@ func Apply(c *cgroups.Cgroup, pid int) (cgroups.ActiveCgroup, error) {
 			systemd1.Property{"CPUShares", dbus.MakeVariant(uint64(c.CpuShares))})
 	}
 
-	if _, err := theConn.StartTransientUnit(unitName, "replace", properties...); err != nil {
-		return nil, err
+	if foreground {
+		if err := theConn.SetUnitProperties(unitName, true, properties...); err != nil {
+			return nil, err
+		}
+	} else {
+		if _, err := theConn.StartTransientUnit(unitName, "replace", properties...); err != nil {
+			return nil, err
+		}
 	}
 
 	// To work around the lack of /dev/pts/* support above we need to manually add these
