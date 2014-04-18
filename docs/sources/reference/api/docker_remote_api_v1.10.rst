@@ -719,38 +719,6 @@ Create an image
         :statuscode 500: server error
 
 
-Squash an image
-***************
-
-.. http:post:: /images/squash
-
-        Create a new squashed image, by combining multiple layers in an already existing image, up
-        to but not including a specified base image
-
-        **Example request**:
-
-        .. sourcecode:: http
-
-           POST /images/squash?base=ubuntu%3A13.10&leaf=docker%3Asquash HTTP/1.1
-
-        **Example response**:
-
-        .. sourcecode:: http
-
-           HTTP/1.1 201 OK
-           Content-Type: application/json
-
-           {
-                "Id":"20b6363a00634979c2fec7b9181d3e90a1b764d1976ba25ac2ca3f6fd516a6bc"
-           }
-
-        :query base: name of the base image to use for the new image
-        :query leaf: name of the image to squash
-        :query repo: repository
-        :query tag: tag
-        :statuscode 201: no error
-        :statuscode 404: no such image
-        :statuscode 500: server error
 
 Insert a file in an image
 *************************
