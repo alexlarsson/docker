@@ -3,6 +3,7 @@
 package nsinit
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"syscall"
@@ -76,6 +77,15 @@ func Exec(container *libcontainer.Container, term Terminal, rootfs, dataPath str
 	if err := InitializeNetworking(container, command.Process.Pid, syncPipe); err != nil {
 		command.Process.Kill()
 		command.Wait()
+		return -1, err
+	}
+
+	syncPipe.CloseWrite()
+
+	files, err := syncPipe.ReadFdsFromChild()
+	fmt.Printf("FILES: %v\n", files)
+	if err != nil {
+		command.Process.Kill()
 		return -1, err
 	}
 

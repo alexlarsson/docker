@@ -9,6 +9,8 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/kr/pty"
+
 	"github.com/dotcloud/docker/pkg/apparmor"
 	"github.com/dotcloud/docker/pkg/label"
 	"github.com/dotcloud/docker/pkg/libcontainer"
@@ -31,6 +33,12 @@ func Init(container *libcontainer.Container, uncleanRootfs, consolePath string, 
 		return err
 	}
 
+	if consolePath != "" {
+		if err := console.OpenAndDup(consolePath); err != nil {
+			return err
+		}
+	}
+
 	// clear the current processes env and replace it with the environment
 	// defined on the container
 	if err := LoadContainerEnvironment(container); err != nil {
@@ -38,18 +46,14 @@ func Init(container *libcontainer.Container, uncleanRootfs, consolePath string, 
 	}
 
 	// We always read this as it is a way to sync with the parent as well
+	fmt.Printf("reading from parent")
 	context, err := syncPipe.ReadFromParent()
 	if err != nil {
 		syncPipe.Close()
 		return err
 	}
-	syncPipe.Close()
+	fmt.Printf("read from parent")
 
-	if consolePath != "" {
-		if err := console.OpenAndDup(consolePath); err != nil {
-			return err
-		}
-	}
 	if _, err := system.Setsid(); err != nil {
 		return fmt.Errorf("setsid %s", err)
 	}
@@ -70,6 +74,27 @@ func Init(container *libcontainer.Container, uncleanRootfs, consolePath string, 
 	if err := mount.InitializeMountNamespace(rootfs, consolePath, container); err != nil {
 		return fmt.Errorf("setup mount namespace %s", err)
 	}
+
+	ptyMaster, ptySlave, err := pty.Open()
+	if err != nil {
+		return err
+	}
+
+	ptySlaveName := ptySlave.Name()
+
+	fmt.Printf("pty slave: %s\n", ptySlaveName)
+
+	fmt.Printf("sending to parent")
+
+	err = syncPipe.SendFdsToParent([]*os.File{ptyMaster})
+	fmt.Printf("sent to parent")
+	if err != nil {
+		syncPipe.Close()
+		return err
+	}
+
+	syncPipe.Close()
+
 	if container.Hostname != "" {
 		if err := system.Sethostname(container.Hostname); err != nil {
 			return fmt.Errorf("sethostname %s", err)
