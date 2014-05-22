@@ -43,7 +43,7 @@ func init() {
 		if err != nil {
 			return err
 		}
-		syncPipe, err := nsinit.NewSyncPipeFromFd(0, uintptr(args.Pipe))
+		syncPipe, err := nsinit.NewSyncPipeFromChildFd(uintptr(args.Pipe))
 		if err != nil {
 			return err
 		}

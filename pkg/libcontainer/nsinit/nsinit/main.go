@@ -61,7 +61,7 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
-		syncPipe, err := nsinit.NewSyncPipeFromFd(0, uintptr(pipeFd))
+		syncPipe, err := nsinit.NewSyncPipeFromChildFd(uintptr(pipeFd))
 		if err != nil {
 			log.Fatalf("unable to create sync pipe: %s", err)
 		}
