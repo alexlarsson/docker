@@ -439,6 +439,7 @@ func (srv *Server) Build(job *engine.Job) engine.Status {
 		noCache        = job.GetenvBool("nocache")
 		rm             = job.GetenvBool("rm")
 		forceRm        = job.GetenvBool("forcerm")
+		grantSecrets   = job.GetenvList("grant_secret")
 		authConfig     = &registry.AuthConfig{}
 		configFile     = &registry.ConfigFile{}
 		tag            string
@@ -497,7 +498,7 @@ func (srv *Server) Build(job *engine.Job) engine.Status {
 			Writer:          job.Stdout,
 			StreamFormatter: sf,
 		},
-		!suppressOutput, !noCache, rm, forceRm, job.Stdout, sf, authConfig, configFile)
+		!suppressOutput, !noCache, rm, forceRm, job.Stdout, sf, authConfig, configFile, grantSecrets)
 	id, err := b.Build(context)
 	if err != nil {
 		return job.Error(err)
