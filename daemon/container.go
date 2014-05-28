@@ -293,6 +293,9 @@ func (container *Container) Start() (err error) {
 	if err := setupMountsForContainer(container); err != nil {
 		return err
 	}
+	if err := container.setupSecretFiles(); err != nil {
+		return err
+	}
 	if err := container.startLoggingToDisk(); err != nil {
 		return err
 	}
@@ -939,6 +942,30 @@ func (container *Container) verifyDaemonSettings() {
 	if container.daemon.sysInfo.IPv4ForwardingDisabled {
 		log.Printf("WARNING: IPv4 forwarding is disabled. Networking will not work")
 	}
+}
+
+func (container *Container) setupSecretFiles() error {
+	container.command.CreateFiles = make(map[string][]byte)
+
+	data, err := container.daemon.secrets.GetHostData()
+	if err != nil {
+		return err
+	}
+	for _, s := range data {
+		container.command.CreateFiles[filepath.Join("/run/secrets", s.Name)] = s.Data
+	}
+	for _, granted := range container.hostConfig.GrantSecrets {
+		data, err := container.daemon.secrets.GetData(granted)
+		if err != nil {
+			return err
+		}
+
+		for _, s := range data {
+			container.command.CreateFiles[filepath.Join("/run/secrets", s.Name)] = s.Data
+		}
+	}
+
+	return nil
 }
 
 func (container *Container) setupLinkedContainers() ([]string, error) {
