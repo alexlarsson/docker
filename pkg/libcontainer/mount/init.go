@@ -51,6 +51,9 @@ func InitializeMountNamespace(rootfs, console string, container *libcontainer.Co
 	if err := nodes.CreateDeviceNodes(rootfs, container.DeviceNodes); err != nil {
 		return fmt.Errorf("create device nodes %s", err)
 	}
+	if err := setupTmpfsMounts(rootfs, container); err != nil {
+		return fmt.Errorf("tmpfs mounts %s", err)
+	}
 	if err := SetupPtmx(rootfs, console, container.Context["mount_label"]); err != nil {
 		return err
 	}
@@ -181,6 +184,27 @@ func setupBindmounts(rootfs string, bindMounts libcontainer.Mounts) error {
 			if err := system.Mount("", dest, "none", uintptr(syscall.MS_PRIVATE), ""); err != nil {
 				return fmt.Errorf("mounting %s private %s", dest, err)
 			}
+		}
+	}
+	return nil
+}
+
+func setupTmpfsMounts(rootfs string, container *libcontainer.Container) error {
+	for _, m := range container.Mounts.OfType("tmpfs") {
+		var (
+			dest = filepath.Join(rootfs, m.Destination)
+		)
+		dest, err := symlink.FollowSymlinkInScope(dest, rootfs)
+		if err != nil {
+			return err
+		}
+
+		if err := createIfNotExists(dest, true); err != nil {
+			return fmt.Errorf("Creating new tmpfs target, %s", err)
+		}
+
+		if err := system.Mount("tmpfs", dest, "tmpfs", uintptr(defaultMountFlags), label.FormatMountLabel("", container.Context["mount_label"])); err != nil {
+			return fmt.Errorf("mounting %s into %s %s", m.Source, dest, err)
 		}
 	}
 	return nil
