@@ -62,12 +62,16 @@ func listDir(dirPath, prefix string, hostBased bool, all bool) []Secret {
 func readAll(root, prefix string) ([]SecretData, error) {
 	path := filepath.Join(root, prefix)
 
+	data := []SecretData{}
+
 	files, err := ioutil.ReadDir(path)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return data, nil
+		}
+
 		return nil, err
 	}
-
-	data := []SecretData{}
 
 	for _, f := range files {
 		fileData, err := readFile(root, filepath.Join(prefix, f.Name()))
