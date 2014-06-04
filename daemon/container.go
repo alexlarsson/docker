@@ -27,6 +27,7 @@ import (
 	"github.com/dotcloud/docker/pkg/networkfs/etchosts"
 	"github.com/dotcloud/docker/pkg/networkfs/resolvconf"
 	"github.com/dotcloud/docker/pkg/symlink"
+	"github.com/dotcloud/docker/pkg/system"
 	"github.com/dotcloud/docker/runconfig"
 	"github.com/dotcloud/docker/utils"
 )
@@ -290,10 +291,10 @@ func (container *Container) Start() (err error) {
 	if err := populateCommand(container, env); err != nil {
 		return err
 	}
-	if err := setupMountsForContainer(container); err != nil {
+	if err := container.setupSecretFiles(); err != nil {
 		return err
 	}
-	if err := container.setupSecretFiles(); err != nil {
+	if err := setupMountsForContainer(container); err != nil {
 		return err
 	}
 	if err := container.startLoggingToDisk(); err != nil {
@@ -301,7 +302,16 @@ func (container *Container) Start() (err error) {
 	}
 	container.waitLock = make(chan struct{})
 
-	return container.waitForStart()
+	if err := container.waitForStart(); err != nil {
+		return err
+	}
+
+	// Now the container is running, unmount the secrets on the host
+	if err := system.Unmount(container.secretsPath(), syscall.MNT_DETACH); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (container *Container) Run() error {
@@ -532,6 +542,9 @@ func (container *Container) cleanup() {
 		}
 	}
 
+	// Ignore errors here as it may not be mounted anymore
+	system.Unmount(container.secretsPath(), syscall.MNT_DETACH)
+
 	if err := container.Unmount(); err != nil {
 		log.Printf("%v: Failed to umount filesystem: %v", container.ID, err)
 	}
@@ -709,6 +722,10 @@ func (container *Container) hostConfigPath() string {
 
 func (container *Container) jsonPath() string {
 	return container.getRootResourcePath("config.json")
+}
+
+func (container *Container) secretsPath() string {
+	return container.getRootResourcePath("secrets")
 }
 
 // This method must be exported to be used from the lxc template
@@ -945,14 +962,22 @@ func (container *Container) verifyDaemonSettings() {
 }
 
 func (container *Container) setupSecretFiles() error {
-	container.command.CreateFiles = make(map[string][]byte)
+	secretsPath := container.secretsPath()
+
+	if err := os.MkdirAll(secretsPath, 0700); err != nil {
+		return err
+	}
+
+	if err := system.Mount("tmpfs", secretsPath, "tmpfs", uintptr(syscall.MS_NOEXEC|syscall.MS_NOSUID|syscall.MS_NODEV), label.FormatMountLabel("", container.GetMountLabel())); err != nil {
+		return fmt.Errorf("mounting secret tmpfs: %s", err)
+	}
 
 	data, err := container.daemon.secrets.GetHostData()
 	if err != nil {
 		return err
 	}
 	for _, s := range data {
-		container.command.CreateFiles[filepath.Join("/run/secrets", s.Name)] = s.Data
+		s.SaveTo(secretsPath)
 	}
 	for _, granted := range container.hostConfig.GrantSecrets {
 		data, err := container.daemon.secrets.GetData(granted)
@@ -961,7 +986,7 @@ func (container *Container) setupSecretFiles() error {
 		}
 
 		for _, s := range data {
-			container.command.CreateFiles[filepath.Join("/run/secrets", s.Name)] = s.Data
+			s.SaveTo(secretsPath)
 		}
 	}
 

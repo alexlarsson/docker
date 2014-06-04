@@ -138,7 +138,6 @@ type Command struct {
 	Mounts             []Mount             `json:"mounts"`
 	AllowedDevices     []*devices.Device   `json:"allowed_devices"`
 	AutoCreatedDevices []*devices.Device   `json:"autocreated_devices"`
-	CreateFiles        map[string][]byte   `json:"create_files"`
 
 	Terminal     Terminal `json:"-"`             // standard or tty terminal
 	Console      string   `json:"-"`             // dev/console path

@@ -39,10 +39,6 @@ func (d *driver) createContainer(c *execdriver.Command) (*libcontainer.Container
 			return nil, err
 		}
 	}
-	container.Mounts = append(container.Mounts, libcontainer.Mount{
-		Type:        "tmpfs",
-		Destination: "/run/secrets",
-	})
 	if err := d.setupCgroups(container, c); err != nil {
 		return nil, err
 	}
